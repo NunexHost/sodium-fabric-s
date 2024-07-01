@@ -112,7 +112,7 @@ public class BlockRenderer {
         Sprite sprite = null;
 
         // Iterate over quads and render
-        for (BakedQuadView quad : quads) {
+        for (BakedQuadView quad : quad) {
             final var lightData = this.getVertexLight(ctx, lighter, cullFace, quad);
             final var vertexColors = this.getVertexColors(ctx, colorizer, quad);
 
