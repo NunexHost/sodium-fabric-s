@@ -61,25 +61,35 @@ public class BlockRenderer {
 
         LightPipeline lighter = this.lighters.getLighter(this.getLightingMode(ctx.state(), ctx.model()));
         Vec3d renderOffset;
-        
+
         if (ctx.state().hasModelOffset()) {
             renderOffset = ctx.state().getModelOffset(ctx.world(), ctx.pos());
         } else {
             renderOffset = Vec3d.ZERO;
         }
 
+        // Pre-compute origin offsets for vertex position calculations
+        final float originX = ctx.origin().x();
+        final float originY = ctx.origin().y();
+        final float originZ = ctx.origin().z();
+        final float offsetX = (float) renderOffset.getX();
+        final float offsetY = (float) renderOffset.getY();
+        final float offsetZ = (float) renderOffset.getZ();
+
+        // Iterate over all faces and render quads
         for (Direction face : DirectionUtil.ALL_DIRECTIONS) {
             List<BakedQuad> quads = this.getGeometry(ctx, face);
 
             if (!quads.isEmpty() && this.isFaceVisible(ctx, face)) {
-                this.renderQuadList(ctx, material, lighter, colorizer, renderOffset, meshBuilder, quads, face);
+                this.renderQuadList(ctx, material, lighter, colorizer, originX, originY, originZ, offsetX, offsetY, offsetZ, meshBuilder, quads, face);
             }
         }
 
+        // Render all quads
         List<BakedQuad> all = this.getGeometry(ctx, null);
 
         if (!all.isEmpty()) {
-            this.renderQuadList(ctx, material, lighter, colorizer, renderOffset, meshBuilder, all, null);
+            this.renderQuadList(ctx, material, lighter, colorizer, originX, originY, originZ, offsetX, offsetY, offsetZ, meshBuilder, all, null);
         }
     }
 
@@ -94,24 +104,27 @@ public class BlockRenderer {
         return this.occlusionCache.shouldDrawSide(ctx.state(), ctx.world(), ctx.pos(), face);
     }
 
-    private void renderQuadList(BlockRenderContext ctx, Material material, LightPipeline lighter, ColorProvider<BlockState> colorizer, Vec3d offset,
+    private void renderQuadList(BlockRenderContext ctx, Material material, LightPipeline lighter, ColorProvider<BlockState> colorizer,
+                                float originX, float originY, float originZ, float offsetX, float offsetY, float offsetZ,
                                 ChunkModelBuilder builder, List<BakedQuad> quads, Direction cullFace) {
 
-        // This is a very hot allocation, iterate over it manually
-        // noinspection ForLoopReplaceableByForEach
-        for (int i = 0, quadsSize = quads.size(); i < quadsSize; i++) {
-            BakedQuadView quad = (BakedQuadView) quads.get(i);
+        // Pre-compute sprite for potential optimizations
+        Sprite sprite = null;
 
+        // Iterate over quads and render
+        for (BakedQuadView quad : quads) {
             final var lightData = this.getVertexLight(ctx, lighter, cullFace, quad);
             final var vertexColors = this.getVertexColors(ctx, colorizer, quad);
 
-            this.writeGeometry(ctx, builder, offset, material, quad, vertexColors, lightData);
-
-            Sprite sprite = quad.getSprite();
-
-            if (sprite != null) {
-                builder.addSprite(sprite);
+            // Optimize sprite addition: only add if sprite changes
+            if (sprite != quad.getSprite()) {
+                sprite = quad.getSprite();
+                if (sprite != null) {
+                    builder.addSprite(sprite);
+                }
             }
+
+            this.writeGeometry(ctx, builder, originX, originY, originZ, offsetX, offsetY, offsetZ, material, quad, vertexColors, lightData);
         }
     }
 
@@ -136,12 +149,13 @@ public class BlockRenderer {
 
     private void writeGeometry(BlockRenderContext ctx,
                                ChunkModelBuilder builder,
-                               Vec3d offset,
+                               float originX, float originY, float originZ,
+                               float offsetX, float offsetY, float offsetZ,
                                Material material,
                                BakedQuadView quad,
                                int[] colors,
-                               QuadLightData light)
-    {
+                               QuadLightData light) {
+
         ModelQuadOrientation orientation = ModelQuadOrientation.orientByBrightness(light.br, light.lm);
         var vertices = this.vertices;
 
@@ -151,9 +165,9 @@ public class BlockRenderer {
             int srcIndex = orientation.getVertexIndex(dstIndex);
 
             var out = vertices[dstIndex];
-            out.x = ctx.origin().x() + quad.getX(srcIndex) + (float) offset.getX();
-            out.y = ctx.origin().y() + quad.getY(srcIndex) + (float) offset.getY();
-            out.z = ctx.origin().z() + quad.getZ(srcIndex) + (float) offset.getZ();
+            out.x = originX + quad.getX(srcIndex) + offsetX;
+            out.y = originY + quad.getY(srcIndex) + offsetY;
+            out.z = originZ + quad.getZ(srcIndex) + offsetZ;
 
             out.color = ColorABGR.withAlpha(colors != null ? colors[srcIndex] : 0xFFFFFFFF, light.br[srcIndex]);
 
@@ -174,4 +188,4 @@ public class BlockRenderer {
             return LightMode.FLAT;
         }
     }
-}
+                }
